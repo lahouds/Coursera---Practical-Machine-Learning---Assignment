@@ -1,0 +1,133 @@
+---
+title: "Coursera | Data Science | Practical Machine Learning Peer-graded Assignement"
+author: "Charbel Lahoud"
+date: " 7th September 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = TRUE,
+	message = FALSE,
+	warning = FALSE
+)
+```
+
+## Introduction
+
+This project is based on the **Weight Lifting Exercise Dataset** available from the website here: http://groupware.les.inf.puc-rio.br/har
+
+6 participants were asked wereto perform barbell lifts correctly and incorrectly in 5 different ways.  
+**The goal of this project is to predict the manner in which they did the exercise**  
+In order to do so, we will the use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants.  
+ 
+## Getting the data
+
+To keep this report short, the exploration of the data was not included in this report
+ 
+```{r getting the data}
+library(ggplot2)
+library(caret)
+library(fscaret)
+library(randomForest)
+library(e1071)
+library(readr)
+
+url_train <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+url_test <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+if (!file.exists("training_data.csv")) {download.file(url_train,destfile="training_data.csv")}
+if (!file.exists("testing_data.csv")) {download.file(url_test,destfile="testing_data.csv")}
+
+training<-read.csv("training_data.csv",na.strings = c("NA", "#DIV/0!", ""))
+testing <- read.csv("testing_data.csv",na.strings = c("NA", "#DIV/0!", ""))
+```
+
+## Splitting the data 
+
+###Removing columns that contains NA values and irrelevant variables
+```{r Cleaning the datasets, warning=FALSE, cache=TRUE}
+training <- training[, which(colSums(is.na(training)) == 0)] 
+testing <- testing[, which(colSums(is.na(testing)) == 0)]
+training <- training[,-c(1:7)] ##the first 7 columns are variables that has no relationship with "class"
+testing <- testing[,-c(1:7)]
+```
+
+###Partioning the training set into training and crossvalidation datasets
+```{r Partioning the datasets, warning=FALSE, cache=TRUE}
+set.seed(888)
+training = data.frame(training)
+inTrain <- createDataPartition(training$classe, p=0.70, list=FALSE)
+train <- training[inTrain, ]
+validation <- training[-inTrain, ]
+```
+
+##Building model and cross validation
+
+###Modelling with regression tree ("rpart")
+```{r Regression Tree Model, warning=FALSE, cache=TRUE}
+fit1 <- train(classe ~ ., method="rpart", data=train)
+val1 <- predict(fit1, validation)
+cm_fit1 <- confusionMatrix(validation$classe, val1)
+accuracy_fit1 <- cm_fit1$overall['Accuracy']
+accuracy_fit1
+```
+
+###Modelling with random forest ("rf")
+
+I've experienced very slow performance to run this model. That's why I start by enabling parallel processing 
+```{r Random Forest Model, warning=FALSE, cache=TRUE}
+
+## Configure parallel processing
+library(parallel)
+library(doParallel)
+cluster <- makeCluster(detectCores() - 1) # convention to leave 1 core for OS
+registerDoParallel(cluster)
+## Configure trainControl object
+fitControl <- trainControl(method = "cv",
+                           number = 5,
+                           allowParallel = TRUE)
+## Now, we can train the model with the parallel processing
+fit2 <- train(classe ~ ., method="rf", data=training, trControl = fitControl)
+## De-register parallel processing cluster
+stopCluster(cluster)
+registerDoSEQ()
+## Now we continue the study
+val2 <- predict(fit2, validation)
+cm_fit2 <- confusionMatrix(validation$classe, val2)
+accuracy_fit2 <- cm_fit2$overall['Accuracy']
+accuracy_fit2
+```
+
+###Modelling with boosted trees ("gbm")
+```{r Boosted Trees Model, warning=FALSE, cache=TRUE}
+fit3 <- train(classe ~ ., method="gbm", data=train,trControl=trainControl(method = "repeatedcv", number = 5, repeats = 1),verbose=FALSE)
+val3 <- predict(fit3, validation)
+cm_fit3 <- confusionMatrix(validation$classe, val3)
+accuracy_fit3 <- cm_fit3$overall['Accuracy']
+accuracy_fit3
+```
+
+### Comparing all the 3 models
+```{r Comparing all models}
+data.frame(Models=c("rpart","rf","gbm"),Accuracy=c(accuracy_fit1,accuracy_fit2,accuracy_fit3))
+```
+
+The above result show that the random forest model has the highest accuracy in cross validation. Therefore, we will use the random forest model for predicting test samples.
+
+##Prediction
+We used the random forest model for prediction
+```{r Final prediction, warning=FALSE, cache=TRUE}
+pred <- predict(fit2, newdata=testing)
+pred
+```
+
+##Appendix
+
+###Plotting decision tree(method="rpart")
+```{r warning=FALSE, echo=FALSE,cache=TRUE}
+library(rattle)
+fancyRpartPlot(fit1$finalModel)
+cm_fit1 # Confusion Matrix of the regression tree model
+cm_fit2 # Confusion Matrix of the random forest model
+cm_fit3 # Confusion Matrix of the boosted tree model
+```

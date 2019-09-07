@@ -1,0 +1,15 @@
+base
+ggplot2
+lattice
+caret
+proto
+gsubfn
+hmeasure
+fscaret
+randomForest
+e1071
+readr
+foreach
+iterators
+doParallel
+rattle
